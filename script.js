@@ -1,152 +1,212 @@
+// Client-side pro script
 const socket = io();
+let clients = {}; // remote players data
+let foods = [];
+let meId = null;
+let meReady = false;
+let meEmoji = "😎";
+let meName = "";
+
+// world size (from server init)
+let WORLD = { w: 1200, h: 800 };
+
+// Canvas setup
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-const chatBox = document.getElementById("chatBox");
-const chatInput = document.getElementById("chatInput");
 
-let playerId = null;
-let players = {};
-let food = [];
-let powerups = [];
-let mapSize = 4000;
-let camera = {x:0, y:0};
-let myName = "Player";
-let mySkin = "😎";
-let dead = false;
-let keys = {};
+// camera
+let cam = { x: 0, y: 0, w: canvas.width, h: canvas.height };
 
-const skins = ["😎","😈","🤡","👽","👾","🤖","🎃","💀","👻","🦁","🐯","🦄","🐉","🦈","🔥","⚡","💎","👑","🧟","🥷","😡","😤","🐸","😋"];
-const grid = document.getElementById("skinGrid");
-skins.forEach(s => {
-    const d = document.createElement("div");
-    d.className = "skin";
-    d.textContent = s;
-    d.onclick = () => { mySkin = s; document.querySelectorAll(".skin").forEach(x=>x.classList.remove("selected")); d.classList.add("selected"); };
-    grid.appendChild(d);
-});
-document.querySelector(".skin").classList.add("selected");
+// input
+const keys = {};
+window.addEventListener("keydown", e => keys[e.key] = true);
+window.addEventListener("keyup", e => keys[e.key] = false);
 
-function showShop(){ document.getElementById("menu").style.display="none"; document.getElementById("shop").style.display="flex"; }
-function back(){ document.getElementById("shop").style.display="none"; document.getElementById("menu").style.display="flex"; }
-function play(){
-    myName = document.getElementById("nameInput").value.trim() || "Player";
-    document.getElementById("menu").style.display="none";
-    socket.emit("join", {name:myName, skin:mySkin});
+// assets (sprites)
+const ASSETS = {
+  player: null, // optional image
+  food: {}
+};
+
+// try to load example images if present
+function tryLoadAssets() {
+  const pimg = new Image();
+  pimg.onload = () => ASSETS.player = pimg;
+  pimg.onerror = ()=>{ ASSETS.player = null; };
+  pimg.src = "assets/player.png"; // optional, you can add this file
+
+  // optional single food sprite
+  const fimg = new Image();
+  fimg.onload = () => ASSETS.food["default"] = fimg;
+  fimg.onerror = ()=>{ ASSETS.food["default"] = null; };
+  fimg.src = "assets/apple.png";
 }
-function respawn(){
-    dead = false;
-    document.getElementById("death").style.display="none";
-    socket.emit("join", {name:myName, skin:mySkin});
-}
+tryLoadAssets();
 
-// CHAT
-document.addEventListener("keydown", e => {
-    if(e.key === "t" || e.key === "T") { chatInput.focus(); }
-    if(e.key === "Enter" && document.activeElement === chatInput && chatInput.value.trim()){
-        socket.emit("chat", chatInput.value.trim());
-        chatInput.value = "";
-    }
-});
-socket.on("chat", msg => {
-    const div = document.createElement("div");
-    div.textContent = msg;
-    div.style.margin = "2px 0";
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
+// UI helpers
+const overlay = document.getElementById("overlay");
+const nameInput = document.getElementById("nameInput");
+
+// socket events
+socket.on("init", data => {
+  meId = data.id;
+  clients = data.players || {};
+  foods = data.food || [];
+  if (data.world) WORLD = data.world;
+  // set canvas to desired size (responsive could be added)
+  canvas.width = Math.min(window.innerWidth, 1200);
+  canvas.height = Math.min(window.innerHeight - 80, 800);
 });
 
-// MOVEMENT
-document.addEventListener("keydown", e => keys[e.key.toLowerCase()]=true);
-document.addEventListener("keyup", e => keys[e.key.toLowerCase()]=false);
-document.addEventListener("keydown", e => { if(e.code==="Space"){ e.preventDefault(); if(!dead) socket.emit("split"); }});
-
-setInterval(() => {
-    if(dead || !players[playerId]) return;
-    let dx=0, dy=0;
-    if(keys["a"]||keys["arrowleft"]) dx--;
-    if(keys["d"]||keys["arrowright"]) dx++;
-    if(keys["w"]||keys["arrowup"]) dy--;
-    if(keys["s"]||keys["arrowdown"]) dy++;
-    if(dx||dy) socket.emit("move", {x:dx/Math.hypot(dx,dy), y:dy/Math.hypot(dx,dy)});
-}, 16);
-
-socket.on("players", p => { players = p; if(!playerId) playerId = socket.id; });
-socket.on("food", f => food = f);
-socket.on("powerups", p => powerups = p);
-socket.on("playerEaten", d => {
-    if(d.victimId === playerId){
-        dead = true;
-        document.getElementById("killer").textContent = `EATEN BY ${d.killerName} ${d.killerSkin}`;
-        document.getElementById("death").style.display = "flex";
-    }
+socket.on("players", data => {
+  clients = data || {};
 });
 
-function cam(){
-    if(!players[playerId]?.blobs?.length) return;
-    const avg = players[playerId].blobs.reduce((a,b)=>({x:a.x+b.x, y:a.y+b.y}), {x:0,y:0});
-    avg.x /= players[playerId].blobs.length;
-    avg.y /= players[playerId].blobs.length;
-    camera.x += (avg.x - canvas.width/2 - camera.x)*0.1;
-    camera.y += (avg.y - canvas.height/2 - camera.y)*0.1;
+socket.on("food", data => {
+  foods = data || [];
+});
+
+socket.on("update", data => {
+  if (data.players) clients = data.players;
+  if (data.food) foods = data.food;
+});
+
+// choose character from UI
+function chooseCharacter(emoji) {
+  meEmoji = emoji;
+  meName = (nameInput && nameInput.value) ? nameInput.value : "Player";
+  // hide overlay and show canvas
+  overlay.style.display = "none";
+  meReady = true;
+  socket.emit("ready", { emoji: meEmoji, name: meName });
 }
 
-function draw(){
-    ctx.fillStyle = "#000811";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    cam();
+// movement & smooth client-side local movement
+const speed = 4;
+function clientUpdateLocal() {
+  if (!meReady || !meId || !clients[meId]) return;
+  const p = clients[meId];
+  let dx = 0, dy = 0;
+  if (keys["ArrowLeft"] || keys["a"]) dx -= speed;
+  if (keys["ArrowRight"] || keys["d"]) dx += speed;
+  if (keys["ArrowUp"] || keys["w"]) dy -= speed;
+  if (keys["ArrowDown"] || keys["s"]) dy += speed;
 
-    // GRID
-    ctx.strokeStyle = "rgba(0,255,255,0.1)";
-    for(let i = -10; i < 50; i++){
-        const x = i*100 - (camera.x % 100);
-        const y = i*100 - (camera.y % 100);
-        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke();
-    }
+  if (dx !== 0 || dy !== 0) {
+    p.x += dx;
+    p.y += dy;
 
-    // FOOD
-    food.forEach(f => {
-        const x = f.x - camera.x;
-        const y = f.y - camera.y;
-        if(x > -100 && x < canvas.width+100 && y > -100 && y < canvas.height+100){
-            ctx.font = "30px Arial";
-            ctx.fillText(f.emoji, x, y);
-        }
-    });
+    // clamp
+    p.x = Math.max(0, Math.min(WORLD.w - p.size, p.x));
+    p.y = Math.max(0, Math.min(WORLD.h - p.size, p.y));
 
-    // POWERUPS
-    powerups.forEach(p => {
-        const x = p.x - camera.x;
-        const y = p.y - camera.y;
-        ctx.font = "50px Arial";
-        ctx.shadowColor = p.color || "#fff";
-        ctx.shadowBlur = 30;
-        ctx.fillText(p.emoji, x, y);
-        ctx.shadowBlur = 0;
-    });
+    socket.emit("move", { x: p.x, y: p.y });
+  }
+}
 
-    // PLAYERS
-    for(let id in players){
-        players[id].blobs.forEach(b => {
-            const x = b.x - camera.x;
-            const y = b.y - camera.y;
-            const skin = id === playerId ? mySkin : players[id].skin;
-            ctx.font = b.size + "px Arial";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.shadowColor = id === playerId ? "#0ff" : "#fff";
-            ctx.shadowBlur = 20;
-            ctx.fillText(skin, x, y);
-            ctx.font = "18px Arial";
-            ctx.fillStyle = "#0ff";
-            ctx.fillText(players[id].name, x, y - b.size/2 - 15);
-        });
-    }
+// render loop
+function draw() {
+  // clear
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // LEADERBOARD
-    const top = Object.values(players).sort((a,b)=>b.totalMass-a.totalMass).slice(0,8);
-    document.getElementById("lb").innerHTML = "<b>TOP 8</b><br>" + top.map((p,i)=>`${i+1}. ${p.name} ${p.skin} ${Math.floor(p.totalMass)}`).join("<br>");
-
+  if (!clients || !meId || !clients[meId]) {
+    // waiting message
+    ctx.fillStyle = "#fff";
+    ctx.font = "18px Arial";
+    ctx.fillText("Waiting for server / select a character...", 20, 30);
     requestAnimationFrame(draw);
+    return;
+  }
+
+  const me = clients[meId];
+
+  // center camera smoothly
+  cam.x += ((me.x + me.size/2) - cam.x - canvas.width/2) * 0.12;
+  cam.y += ((me.y + me.size/2) - cam.y - canvas.height/2) * 0.12;
+
+  // clamp camera inside world
+  cam.x = Math.max(0, Math.min(WORLD.w - canvas.width, cam.x));
+  cam.y = Math.max(0, Math.min(WORLD.h - canvas.height, cam.y));
+
+  // draw background grid
+  const gridSize = 100;
+  ctx.fillStyle = "#e6eef5";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
+  ctx.strokeStyle = "#d7e6ef";
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx < WORLD.w; gx += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(gx + 0.5, 0);
+    ctx.lineTo(gx + 0.5, WORLD.h);
+    ctx.stroke();
+  }
+  for (let gy = 0; gy < WORLD.h; gy += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, gy + 0.5);
+    ctx.lineTo(WORLD.w, gy + 0.5);
+    ctx.stroke();
+  }
+
+  // draw food
+  for (const f of foods) {
+    // sprite fallback
+    if (ASSETS.food["default"]) {
+      ctx.drawImage(ASSETS.food["default"], f.x - 15, f.y - 15, 30, 30);
+    } else {
+      ctx.font = "26px Arial";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(f.emoji, f.x, f.y);
+    }
+  }
+
+  // draw players
+  for (const id in clients) {
+    const p = clients[id];
+    const drawX = p.x, drawY = p.y;
+    // draw circle behind player to make emoji readable
+    ctx.beginPath();
+    ctx.fillStyle = (id === meId) ? "rgba(0,255,200,0.08)" : "rgba(0,0,0,0.05)";
+    ctx.fillRect(drawX - 6, drawY - 6, p.size + 12, p.size + 12);
+
+    if (ASSETS.player) {
+      ctx.drawImage(ASSETS.player, drawX, drawY, p.size, p.size);
+    } else {
+      ctx.font = `${Math.max(12, p.size)}px Arial`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(p.emoji || "😃", drawX + p.size/2, drawY + p.size/2);
+    }
+
+    // name tag
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#222";
+    ctx.fillText(p.name || "Player", drawX + p.size/2, drawY - 8);
+  }
+
+  ctx.restore();
+
+  // draw HUD elements (leaderboard)
+  updateLeaderboard();
+  requestAnimationFrame(draw);
 }
+
+function updateLeaderboard() {
+  const board = document.getElementById("leaderboard");
+  const arr = Object.values(clients).sort((a,b) => b.size - a.size).slice(0,5);
+  board.innerHTML = "<b>Leaderboard</b><br>" + arr.map(p => `${p.emoji||'😃'} ${p.name||'Player'} - ${Math.floor(p.size)}`).join("<br>");
+}
+
+// game loop (update + draw)
+function tick() {
+  clientUpdateLocal();
+  setTimeout(tick, 1000/60); // 60hz-ish
+}
+tick();
 draw();
+
+// window resize handler
+window.addEventListener("resize", () => {
+  canvas.width = Math.min(window.innerWidth, 1200);
+  canvas.height = Math.min(window.innerHeight - 80, 800);
+});
