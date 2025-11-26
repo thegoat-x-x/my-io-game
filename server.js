@@ -106,4 +106,4 @@ setInterval(() => {
   io.emit("state", { players, projectiles });
 }, 1000/60);
 
-server.listen(process.env.PORT || 3000, () => console.log("NINJA.IO LIVE — gobattle.io KILLER 🔥"));
+ server.listen(process.env.PORT || 3000, () => console.log("NINJA.IO LIVE — gobattle.io KILLER 🔥"));
