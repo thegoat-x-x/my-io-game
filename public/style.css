@@ -1,1 +1,63 @@
+:root {
+  --bg1: #0b0f17;
+  --accent: #00ffd0;
+  --panel: rgba(0,0,0,0.5);
+}
 
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: radial-gradient(circle at 10% 10%, #07101a 0%, #000 60%);
+  font-family: Inter, Arial, sans-serif;
+  color: #cfeef2;
+  overflow: hidden;
+}
+
+canvas { display: block; margin: 0 auto; background: linear-gradient(#f5f7fa, #e9eef4); }
+
+/* overlay and menu */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65));
+  z-index: 40;
+}
+
+.box {
+  background: rgba(10, 14, 20, 0.85);
+  padding: 24px;
+  border-radius: 10px;
+  text-align:center;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+}
+
+.box h1 { margin: 0 0 8px; color: var(--accent); text-shadow: 0 0 10px #0ff; }
+.row { margin-top: 12px; }
+
+input#nameInput {
+  padding: 8px 12px; border-radius: 6px; border: none; width: 220px;
+}
+
+/* HUD */
+#hud { position: absolute; top: 12px; left: 12px; right: 12px; pointer-events: none; }
+.panel {
+  background: var(--panel);
+  padding: 8px 12px;
+  border-radius: 8px;
+  display: inline-block;
+  margin-right: 8px;
+  pointer-events: auto;
+}
+
+/* leaderboard */
+#leaderboard { position: absolute; top: 12px; right: 12px; color: var(--accent); }
+
+/* small screens */
+@media (max-width: 900px) {
+  canvas { width: 100%; height: auto; }
+  .box { width: 90%; }
+}
