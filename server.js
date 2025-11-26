@@ -4,92 +4,106 @@ const server = require("http").createServer(app);
 const io = require("socket.io")(server);
 app.use(express.static("public"));
 
-const MAP = 5000;
 let players = {};
-let food = [];
+let projectiles = [];
 
-for (let i = 0; i < 800; i++) {
-  food.push({
-    x: Math.random() * MAP,
-    y: Math.random() * MAP,
-    emoji: ["🍎","🍌","🍇","🍒","🍕","🍔","🍩","🍪"][Math.floor(Math.random()*8)]
-  });
-}
+const MAP_WIDTH = 3000;
+const MAP_HEIGHT = 2000;
+const GRAVITY = 0.5;
+const JUMP = -12;
+const SPEED = 5;
 
 io.on("connection", socket => {
   socket.on("join", data => {
     players[socket.id] = {
       id: socket.id,
-      name: data.name || "Player",
-      skin: data.skin || "😈",
-      x: 2000 + Math.random() * 1000,
-      y: 2000 + Math.random() * 1000,
-      size: 30,
-      blobs: [{x:0, y:0, size:30}]
+      name: data.name || "Ninja",
+      skin: data.skin || "🥷",
+      x: 200 + Math.random() * (MAP_WIDTH - 400),
+      y: 100,
+      vx: 0, vy: 0,
+      facing: 1,
+      health: 100,
+      kills: 0,
+      onGround: false
     };
-    socket.emit("init", {players, food, map: MAP});
   });
 
-  socket.on("move", dir => {
+  socket.on("input", keys => {
     if (!players[socket.id]) return;
     const p = players[socket.id];
-    const speed = Math.max(1, 8 / (p.size / 30)); // bigger = slower, no lag
-    p.x += dir.x * speed;
-    p.y += dir.y * speed;
-    p.x = Math.max(0, Math.min(MAP - p.size, p.x));
-    p.y = Math.max(0, Math.min(MAP - p.size, p.y));
-
-    // eat food (simple, fast)
-    food = food.filter(f => {
-      const dist = Math.hypot(f.x - p.x, f.y - p.y);
-      if (dist < p.size / 2 + 15) {
-        p.size += 2;
-        return false;
-      }
-      return true;
-    });
-
-    // eat players (fast check)
-    for (let id in players) {
-      if (id === socket.id) continue;
-      const other = players[id];
-      const dist = Math.hypot(other.x - p.x, other.y - p.y);
-      if (dist < (p.size + other.size)/2 && p.size > other.size * 1.1) {
-        p.size += other.size / 4;
-        delete players[id];
-        io.emit("killfeed", `${p.name} ate ${other.name}`);
-      }
+    p.vx = 0;
+    if (keys.left) p.vx = -SPEED, p.facing = -1;
+    if (keys.right) p.vx = SPEED, p.facing = 1;
+    if (keys.jump && p.onGround) p.vy = JUMP;
+    if (keys.attack) {
+      projectiles.push({
+        x: p.x + (p.facing * 30),
+        y: p.y - 20,
+        vx: p.facing * 15,
+        owner: socket.id
+      });
+      keys.attack = false;
     }
-
-    // respawn food (batch)
-    if (food.length < 800) {
-      for (let i = 0; i < 50; i++) {
-        food.push({x: Math.random()*MAP, y: Math.random()*MAP, emoji: "🍎"});
-      }
-    }
-
-    io.emit("state", {players, food});
   });
 
-  socket.on("split", () => {
-    if (!players[socket.id] || players[socket.id].size < 40) return;
-    const p = players[socket.id];
-    p.size /= 2;
-    p.blobs.push({x: p.x + 30, y: p.y + 30, size: p.size / 2});
-  });
-
-  socket.on("chat", msg => {
-    if (msg.trim()) io.emit("chat", `${players[socket.id]?.name}: ${msg}`);
-  });
+  socket.on("chat", msg => io.emit("chat", `${players[socket.id]?.name}: ${msg}`));
 
   socket.on("disconnect", () => delete players[socket.id]);
 });
 
-// emit only on changes, no spam
+// Physics + Projectiles
 setInterval(() => {
-  if (Object.keys(players).length > 0) io.emit("state", {players, food});
-}, 100); // 10fps server update, no lag
+  for (let id in players) {
+    const p = players[id];
+    p.vy += GRAVITY;
+    p.x += p.vx;
+    p.y += p.vy;
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log("LEAN .IO LIVE — 0 LAG, WASD ONLY, NO BUGS FAM");
-});
+    // Floor
+    if (p.y > 1600) {
+      p.y = 1600;
+      p.vy = 0;
+      p.onGround = true;
+    } else p.onGround = false;
+
+    // Walls
+    if (p.x < 0) p.x = 0;
+    if (p.x > MAP_WIDTH - 50) p.x = MAP_WIDTH - 50;
+
+    // Platforms (simple)
+    if (p.y > 1000 && p.y < 1020 && p.x > 800 && p.x < 2200) {
+      p.y = 1000;
+      p.vy = 0;
+      p.onGround = true;
+    }
+  }
+
+  // Projectiles
+  projectiles = projectiles.filter(proj => {
+    proj.x += proj.vx;
+    if (proj.x < -100 || proj.x > MAP_WIDTH + 100) return false;
+
+    for (let id in players) {
+      const p = players[id];
+      if (id === proj.owner) continue;
+      if (Math.hypot(proj.x - p.x, proj.y - p.y) < 40) {
+        p.health -= 34;
+        if (p.health <= 0) {
+          players[proj.owner].kills++;
+          players[proj.owner].skin = p.skin; // steal skin!
+          io.emit("killfeed", `${players[proj.owner].name} ⚔️ ${p.name}`);
+          p.x = 200 + Math.random() * 2400;
+          p.y = 100;
+          p.health = 100;
+        }
+        return false;
+      }
+    }
+    return true;
+  });
+
+  io.emit("state", { players, projectiles });
+}, 1000/60);
+
+server.listen(process.env.PORT || 3000, () => console.log("NINJA.IO LIVE — gobattle.io KILLER 🔥"));
