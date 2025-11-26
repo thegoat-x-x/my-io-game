@@ -1,173 +1,193 @@
+// script.js - Professional Client Engine
 const socket = io();
-let clients = {};
-let foods = [];
-let powerups = [];
-let meId = null;
-let meReady = false;
-let meEmoji = "😎";
-let meName = "";
-let WORLD = { w: 1200, h: 800 };
-let dead = false;
-const canvas = document.getElementById("gameCanvas");
+const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-let cam = { x: 0, y: 0, w: canvas.width, h: canvas.height };
-const keys = {};
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-window.addEventListener("keydown", e => keys[e.key] = true);
-window.addEventListener("keyup", e => keys[e.key] = false);
+let me = null;
+let players = {};
+let food = [];
+let powerups = [];
+let mapSize = 5000;
+let mouse = { x: 0, y: 0 };
+let keys = {};
+let chatVisible = false;
 
-document.addEventListener("keydown", e => {
-    if (e.key === "t" || e.key === "T") { e.preventDefault(); document.getElementById("chatInput").focus(); }
-    if (e.key === "Enter" && document.activeElement === document.getElementById("chatInput") && document.getElementById("chatInput").value.trim()) {
-        socket.emit("chat", document.getElementById("chatInput").value.trim());
-        document.getElementById("chatInput").value = "";
-        document.getElementById("chatInput").blur();
-    }
-    if (e.code === "Space") { e.preventDefault(); if (meReady && !dead) socket.emit("split"); }
-});
+const skins = ["😀","😎","😈","🤡","👽","👾","🎃","💀","👻","🦁","🐯","🦄","🐉","🦈","🔥","⚡","💎","👑","🧙","🧟","🥷","🦸","🦹","🐸"];
+document.getElementById("skins").innerHTML = skins.map(s => 
+  `<div class="skin" onclick="selectedSkin='${s}';document.querySelectorAll('.skin').forEach(x=>x.classList.remove('active'));this.classList.add('active')">${s}</div>`
+).join("");
+let selectedSkin = "😎";
+document.querySelector(".skin").classList.add("active");
 
-socket.on("chat", msg => {
-    const div = document.createElement("div");
-    div.textContent = msg;
-    document.getElementById("chatBox").appendChild(div);
-    document.getElementById("chatBox").scrollTop = document.getElementById("chatBox").scrollHeight;
-});
-
-const overlay = document.getElementById("overlay");
-const nameInput = document.getElementById("nameInput");
-
-function chooseCharacter(emoji) {
-    meEmoji = emoji;
-    meName = nameInput.value || "Player";
-    overlay.style.display = "none";
-    socket.emit("ready", { emoji: meEmoji, name: meName });
+function startGame() {
+  const name = document.getElementById("nameInput").value.trim() || "Player";
+  document.getElementById("menu").style.display = "none";
+  socket.emit("join", { name, skin: selectedSkin });
 }
 
-const speed = 4;
-function clientUpdateLocal() {
-    if (!meReady || !meId || !clients[meId]) return;
-    const p = clients[meId];
-    let dx = 0, dy = 0;
-    if (keys["ArrowLeft"] || keys["a"]) dx -= speed;
-    if (keys["ArrowRight"] || keys["d"]) dx += speed;
-    if (keys["ArrowUp"] || keys["w"]) dy -= speed;
-    if (keys["ArrowDown"] || keys["s"]) dy += speed;
-    if (dx !== 0 || dy !== 0) {
-        p.x += dx;
-        p.y += dy;
-        p.x = Math.max(0, Math.min(WORLD.w - p.size, p.x));
-        p.y = Math.max(0, Math.min(WORLD.h - p.size, p.y));
-        socket.emit("move", { x: p.x, y: p.y });
-    }
+function respawn() {
+  document.getElementById("death").style.display = "none";
+  startGame();
 }
 
+// Input
+window.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener("touchmove", e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  mouse.x = touch.clientX;
+  mouse.y = touch.clientY;
+}, { passive: false });
+
+window.addEventListener("keydown", e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === "t") {
+    document.getElementById("chatInput").focus();
+    e.preventDefault();
+  }
+  if (e.key === " ") {
+    socket.emit("split");
+    e.preventDefault();
+  }
+});
+window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+document.getElementById("chatInput").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.value.trim()) {
+    socket.emit("chat", e.target.value.trim());
+    e.target.value = "";
+    e.target.blur();
+  }
+});
+
+// Socket Events
 socket.on("init", data => {
-    meId = data.id;
-    clients = data.players || {};
-    foods = data.food || [];
-    powerups = data.powerups || [];
-    WORLD = data.world || WORLD;
-    canvas.width = Math.min(window.innerWidth, 1200);
-    canvas.height = Math.min(window.innerHeight - 80, 800);
-    meReady = true;
+  me = data.id;
+  players = data.players;
+  food = data.food;
+  powerups = data.powerups;
+  mapSize = data.mapSize;
 });
 
-socket.on("players", data => clients = data || {});
-socket.on("food", data => foods = data || {});
-socket.on("powerups", data => powerups = data || {});
+socket.on("gameState", data => {
+  players = data.players;
+  food = data.food;
+  powerups = data.powerups;
+});
 
-function draw() {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    if (!clients || !meId || !clients[meId]) {
-        ctx.fillStyle = "#fff";
-        ctx.font = "18px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText("Joining game... (WASD to move)", canvas.width/2, canvas.height/2);
-        requestAnimationFrame(draw);
-        return;
-    }
-    const me = clients[meId];
-    cam.x += ((me.x + me.size/2) - cam.x - canvas.width/2) * 0.12;
-    cam.y += ((me.y + me.size/2) - cam.y - canvas.height/2) * 0.12;
-    cam.x = Math.max(0, Math.min(WORLD.w - canvas.width, cam.x));
-    cam.y = Math.max(0, Math.min(WORLD.h - canvas.height, cam.y));
+socket.on("chat", msg => addChat(msg.name + ": " + msg.msg));
+socket.on("killfeed", msg => addKillfeed(msg));
 
-    ctx.fillStyle = "#000814";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.save();
-    ctx.translate(-cam.x, -cam.y);
-    ctx.strokeStyle = "rgba(0,255,255,0.1)";
-    ctx.lineWidth = 1;
-    const gridSize = 100;
-    for (let gx = 0; gx < WORLD.w; gx += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(gx + 0.5, 0);
-        ctx.lineTo(gx + 0.5, WORLD.h);
-        ctx.stroke();
-    }
-    for (let gy = 0; gy < WORLD.h; gy += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, gy + 0.5);
-        ctx.lineTo(WORLD.w, gy + 0.5);
-        ctx.stroke();
-    }
+function addChat(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  document.getElementById("messages").appendChild(div);
+  div.scrollIntoView();
+}
 
-    // food
-    foods.forEach(f => {
-        ctx.font = "26px Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(f.emoji, f.x, f.y);
+function addKillfeed(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  div.className = "kill";
+  document.getElementById("killfeed").appendChild(div);
+  setTimeout(() => div.remove(), 4000);
+}
+
+// Game Loop
+function loop() {
+  ctx.fillStyle = "#0a001f";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (!players[me]) {
+    ctx.fillStyle = "#0ff";
+    ctx.font = "30px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Connecting...", canvas.width / 2, canvas.height / 2);
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  const myPlayer = players[me];
+  const camX = canvas.width / 2 - myPlayer.x;
+  const camY = canvas.height / 2 - myPlayer.y;
+
+  ctx.save();
+  ctx.translate(camX, camY);
+
+  // Grid
+  ctx.strokeStyle = "rgba(0,255,255,0.1)";
+  for (let x = -mapSize; x < mapSize * 2; x += 100) {
+    ctx.beginPath();
+    ctx.moveTo(x, -mapSize);
+    ctx.lineTo(x, mapSize * 2);
+    ctx.stroke();
+  }
+  for (let y = -mapSize; y < mapSize * 2; y += 100) {
+    ctx.beginPath();
+    ctx.moveTo(-mapSize, y);
+    ctx.lineTo(mapSize * 2, y);
+    ctx.stroke();
+  }
+
+  // Food
+  food.forEach(f => {
+    ctx.font = "30px Arial";
+    ctx.fillText(f.emoji, f.x, f.y);
+  });
+
+  // Powerups
+  powerups.forEach(p => {
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 20;
+    ctx.font = "50px Arial";
+    ctx.fillText(p.emoji, p.x, p.y);
+    ctx.shadowBlur = 0;
+  });
+
+  // Players
+  Object.values(players).forEach(p => {
+    p.blobs.forEach(b => {
+      const x = p.x + b.x;
+      const y = p.y + b.y;
+      const size = Math.sqrt(b.mass) * 3;
+
+      ctx.fillStyle = p.color + "40";
+      ctx.beginPath();
+      ctx.arc(x, y, size + 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = size + "px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(p.skin, x, y);
+
+      ctx.font = "16px Arial";
+      ctx.fillStyle = "#0ff";
+      ctx.fillText(p.name, x, y - size - 10);
     });
+  });
 
-    // powerups
-    powerups.forEach(pu => {
-        ctx.font = "40px Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.shadowColor = pu.color || "#fff";
-        ctx.shadowBlur = 20;
-        ctx.fillText(pu.emoji, pu.x, pu.y);
-        ctx.shadowBlur = 0;
-    });
+  ctx.restore();
 
-    // players
-    for (let id in clients) {
-        const p = clients[id];
-        const drawX = p.x, drawY = p.y;
-        ctx.beginPath();
-        ctx.fillStyle = (id === meId) ? "rgba(0,255,200,0.08)" : "rgba(0,0,0,0.05)";
-        ctx.fillRect(drawX - 6, drawY - 6, p.size + 12, p.size + 12);
-        ctx.font = `${Math.max(12, p.size)}px Arial`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.shadowColor = id === meId ? "#0ff" : "#fff";
-        ctx.shadowBlur = 20;
-        ctx.fillText(p.emoji || "😈", drawX + p.size/2, drawY + p.size/2);
-        ctx.font = "14px Arial";
-        ctx.fillStyle = "#0ff";
-        ctx.shadowBlur = 0;
-        ctx.fillText(p.name || "Player", drawX + p.size/2, drawY - 8);
-    }
-    ctx.restore();
-    updateLeaderboard();
-    requestAnimationFrame(draw);
+  // Leaderboard
+  const sorted = Object.values(players).sort((a, b) => b.mass - a.mass).slice(0, 10);
+  document.getElementById("leaderboard").innerHTML = "<h3>Leaderboard</h3>" + sorted.map((p, i) => 
+    `${i + 1}. ${p.skin} ${p.name} — ${Math.floor(p.mass)}`
+  ).join("<br>");
+
+  // Movement
+  const targetX = mouse.x - canvas.width / 2;
+  const targetY = mouse.y - canvas.height / 2;
+  socket.emit("move", { x: targetX, y: targetY });
+
+  requestAnimationFrame(loop);
 }
-
-function updateLeaderboard() {
-    const board = document.getElementById("leaderboard");
-    const arr = Object.values(clients).sort((a,b) => b.size - a.size).slice(0,5);
-    board.innerHTML = "<b>Leaderboard</b><br>" + arr.map(p => `${p.emoji||'😈'} ${p.name||'Player'} - ${Math.floor(p.size)}`).join("<br>");
-}
-
-function tick() {
-    clientUpdateLocal();
-    setTimeout(tick, 1000/60);
-}
-tick();
-draw();
+loop();
 
 window.addEventListener("resize", () => {
-    canvas.width = Math.min(window.innerWidth, 1200);
-    canvas.height = Math.min(window.innerHeight - 80, 800);
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 });
