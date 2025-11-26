@@ -6,60 +6,106 @@ app.use(express.static("public"));
 
 let players = {};
 let swords = [];
-const platforms = [[0,1900,4000,300],[400,1500,900,60],[2000,1200,800,60],[1000,900,600,60]];
 
-io.on("connection", s => {
-  s.on("join", d => {
-    players[s.id] = {
-      id:s.id, name:d.name, x:Math.random()*3000+500, y:100, vx:0, vy:0, facing:1, health:100, kills:0, onGround:false, attacking:false
+// SAFE SPAWN POINTS (always on platforms)
+const SPAWNS = [
+  { x: 600, y: 1820 },   // main ground left
+  { x: 2000, y: 1820 },  // main ground middle
+  { x: 3400, y: 1820 },  // main ground right
+  { x: 800, y: 1440 },   // upper platform
+  { x: 2400, y: 1140 },  // mid platform
+  { x: 1300, y: 840 }    // top platform
+];
+
+const platforms = [
+  [0,1900,4000,300],      // main ground
+  [400,1500,900,60],
+  [2000,1200,800,60],
+  [1000,900,600,60]
+];
+
+io.on("connection", socket => {
+  socket.on("join", data => {
+    const spawn = SPAWNS[Math.floor(Math.random() * SPAWNS.length)];
+    players[socket.id] = {
+      id: socket.id,
+      name: data.name || "Warrior",
+      x: spawn.x,
+      y: spawn.y,
+      vx: 0, vy: 0,
+      facing: 1,
+      health: 100,
+      kills: 0,
+      onGround: true,
+      attacking: false
     };
   });
 
-  s.on("input", i => {
-    if (!players[s.id]) return;
-    const p = players[s.id];
-    p.vx = (i.right?5:0) - (i.left?5:0);
-    if (i.right) p.facing = 1;
-    if (i.left) p.facing = -1;
-    if (i.jump && p.onGround) p.vy = -14;
-    if (i.v) {
+  socket.on("input", input => {
+    if (!players[socket.id]) return;
+    const p = players[socket.id];
+    p.vx = (input.right ? 6 : 0) - (input.left ? 6 : 0);
+    if (input.right) p.facing = 1;
+    if (input.left) p.facing = -1;
+    if (input.jump && p.onGround) p.vy = -15;
+    if (input.v && !p.attacking) {
       p.attacking = true;
-      swords.push({x:p.x+p.facing*60, y:p.y, vx:p.facing*15, owner:s.id});
+      swords.push({ x: p.x + p.facing*70, y: p.y-20, vx: p.facing*18, owner: socket.id });
       setTimeout(() => p.attacking = false, 300);
     }
   });
+
+  socket.on("disconnect", () => delete players[socket.id]);
 });
 
+// 60FPS PHYSICS
 setInterval(() => {
   for (let id in players) {
     const p = players[id];
-    p.vy += 0.5; p.x += p.vx; p.y += p.vy;
+    if (!p.onGround) p.vy += 0.6;
+    p.x += p.vx;
+    p.y += p.vy;
     p.onGround = false;
-    platforms.forEach(plat => {
-      if (p.vy>0 && p.x+40>plat[0] && p.x<plat[0]+plat[2] && p.y+80>plat[1] && p.y<plat[1]+plat[3]) {
-        p.y = plat[1]-80; p.vy = 0; p.onGround = true;
+
+    // LAND ON PLATFORMS
+    for (let plat of platforms) {
+      if (p.vy > 0 &&
+          p.x + 50 > plat[0] && p.x - 50 < plat[0] + plat[2] &&
+          p.y + 90 > plat[1] && p.y + 90 < plat[1] + plat[3] + 50) {
+        p.y = plat[1] - 90;
+        p.vy = 0;
+        p.onGround = true;
       }
-    });
-    if (p.y > 2200) { p.health = 0; }
+    }
+
+    // DEATH PIT
+    if (p.y > 2500) {
+      p.health = 0;
+      const spawn = SPAWNS[Math.floor(Math.random() * SPAWNS.length)];
+      p.x = spawn.x; p.y = spawn.y; p.vy = 0; p.health = 100;
+    }
   }
 
-  swords = swords.filter(sw => {
-    sw.x += sw.vx;
+  // SWORD HIT
+  swords = swords.filter(s => {
+    s.x += s.vx;
+    if (s.x < -200 || s.x > 4200) return false;
     for (let id in players) {
       const p = players[id];
-      if (id !== sw.owner && Math.hypot(sw.x-p.x, sw.y-p.y)<60) {
-        p.health -= 35;
+      if (id !== s.owner && Math.hypot(s.x - p.x, s.y - p.y) < 70) {
+        p.health -= 40;
         if (p.health <= 0) {
-          players[sw.owner].kills++;
-          p.x = Math.random()*3000+500; p.y = 100; p.health = 100;
+          players[s.owner].kills++;
+          const spawn = SPAWNS[Math.floor(Math.random() * SPAWNS.length)];
+          p.x = spawn.x; p.y = spawn.y; p.health = 100; p.vy = 0;
         }
         return false;
       }
     }
-    return sw.x > -100 && sw.x < 5000;
+    return true;
   });
 
-  io.emit("state", {players, swords});
+  io.emit("state", { players, swords });
 }, 16);
 
-http.listen(process.env.PORT || 3000);
+http.listen(process.env.PORT || 3000, () => console.log("FANTASY BATTLE.IO — NO FALL SPAWN FIXED 🔥"));
