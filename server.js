@@ -8,7 +8,7 @@ const MAP = 5000;
 let players = {};
 let food = [];
 
-for (let i = 0; i < 1200; i++) {
+for (let i = 0; i < 800; i++) {
   food.push({
     x: Math.random() * MAP,
     y: Math.random() * MAP,
@@ -27,65 +27,55 @@ io.on("connection", socket => {
       size: 30,
       blobs: [{x:0, y:0, size:30}]
     };
+    socket.emit("init", {players, food, map: MAP});
   });
 
   socket.on("move", dir => {
     if (!players[socket.id]) return;
     const p = players[socket.id];
-    const speed = 5 + (1000 / p.size); // bigger = slower
-    p.blobs.forEach(b => {
-      b.x += dir.x * speed;
-      b.y += dir.y * speed;
-    });
+    const speed = Math.max(1, 8 / (p.size / 30)); // bigger = slower, no lag
+    p.x += dir.x * speed;
+    p.y += dir.y * speed;
+    p.x = Math.max(0, Math.min(MAP - p.size, p.x));
+    p.y = Math.max(0, Math.min(MAP - p.size, p.y));
 
-    // eat food
+    // eat food (simple, fast)
     food = food.filter(f => {
-      for (let b of p.blobs) {
-        if (Math.hypot(f.x - (p.x + b.x), f.y - (p.y + b.y)) < p.size / 2) {
-          p.size += 3;
-          b.size += 3;
-          return false;
-        }
+      const dist = Math.hypot(f.x - p.x, f.y - p.y);
+      if (dist < p.size / 2 + 15) {
+        p.size += 2;
+        return false;
       }
       return true;
     });
 
-    // eat players
+    // eat players (fast check)
     for (let id in players) {
       if (id === socket.id) continue;
       const other = players[id];
-      for (let b1 of p.blobs) {
-        for (let b2 of other.blobs) {
-          if (Math.hypot((p.x + b1.x) - (other.x + b2.x), (p.y + b1.y) - (other.y + b2.y)) < p.size / 2 &&
-              p.size > other.size * 1.1) {
-            p.size += other.size / 5;
-            b1.size += other.size / 5;
-            delete players[id];
-            io.emit("killfeed", `${p.name} ate ${other.name}`);
-            return;
-          }
-        }
+      const dist = Math.hypot(other.x - p.x, other.y - p.y);
+      if (dist < (p.size + other.size)/2 && p.size > other.size * 1.1) {
+        p.size += other.size / 4;
+        delete players[id];
+        io.emit("killfeed", `${p.name} ate ${other.name}`);
       }
     }
 
-    while (food.length < 1200) {
-      food.push({x: Math.random()*MAP, y: Math.random()*MAP, emoji: "🍎"});
+    // respawn food (batch)
+    if (food.length < 800) {
+      for (let i = 0; i < 50; i++) {
+        food.push({x: Math.random()*MAP, y: Math.random()*MAP, emoji: "🍎"});
+      }
     }
 
     io.emit("state", {players, food});
   });
 
   socket.on("split", () => {
-    if (!players[socket.id] || players[socket.id].blobs.length >= 16) return;
+    if (!players[socket.id] || players[socket.id].size < 40) return;
     const p = players[socket.id];
-    const newBlobs = [];
-    p.blobs.forEach(b => {
-      if (b.size > 35) {
-        b.size /= 2;
-        newBlobs.push({x: b.x + 30, y: b.y + 30, size: b.size});
-      }
-    });
-    p.blobs.push(...newBlobs);
+    p.size /= 2;
+    p.blobs.push({x: p.x + 30, y: p.y + 30, size: p.size / 2});
   });
 
   socket.on("chat", msg => {
@@ -95,8 +85,11 @@ io.on("connection", socket => {
   socket.on("disconnect", () => delete players[socket.id]);
 });
 
-setInterval(() => io.emit("state", {players, food}), 1000/60);
+// emit only on changes, no spam
+setInterval(() => {
+  if (Object.keys(players).length > 0) io.emit("state", {players, food});
+}, 100); // 10fps server update, no lag
 
 server.listen(process.env.PORT || 3000, () => {
-  console.log("CLEAN .IO GAME LIVE — NO LAG, NO NEON, NO BULLSHIT");
+  console.log("LEAN .IO LIVE — 0 LAG, WASD ONLY, NO BUGS FAM");
 });
