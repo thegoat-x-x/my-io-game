@@ -1,38 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fantasy Battle.IO — Knights vs Ninjas Royale</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <title>FANTASY BATTLE.IO</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="menu">
-        <h1>FANTASY BATTLE.IO</h1>
-        <input type="text" id="nameInput" placeholder="Warrior Name" maxlength="12">
-        <div id="skinSelect">
-            <h3>Choose Class</h3>
-            <button onclick="selectSkin('🥷')">Ninja 🥷</button>
-            <button onclick="selectSkin('⚔️')">Knight ⚔️</button>
-            <button onclick="selectSkin('🧙')">Mage 🧙</button>
-        </div>
-        <button onclick="startGame()">ENTER ARENA</button>
-        <p>WASD Move • Space Jump • Mouse Throw • T Chat</p>
-    </div>
+  <div id="menu">
+    <h1>FANTASY BATTLE.IO</h1>
+    <input type="text" id="name" placeholder="Warrior Name" maxlength="12">
+    <button onclick="play()">ENTER BATTLE</button>
+    <p>WASD • SPACE Jump • V Sword Slash • T Chat</p>
+  </div>
 
-    <canvas id="gameCanvas"></canvas>
+  <canvas id="c"></canvas>
+  <div id="lb"></div>
+  <div id="chat"></div>
+  <input id="chatInput" placeholder="Press T to chat" maxlength="80">
 
-    <div id="hud">
-        <div id="leaderboard"></div>
-        <div id="killfeed"></div>
-    </div>
-
-    <div id="chatContainer">
-        <div id="chatMessages"></div>
-        <input type="text" id="chatInput" placeholder="Press T to chat..." maxlength="60">
-    </div>
-
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
