@@ -1,85 +1,78 @@
-// server.js - Professional .io Game Server
 const express = require("express");
 const app = express();
 const server = require("http").createServer(app);
 const io = require("socket.io")(server);
-
 app.use(express.static("public"));
 
-const MAP_SIZE = 5000;
-const FOOD_COUNT = 1000;
-const POWERUP_COUNT = 10;
-
+const MAP = 5000;
 let players = {};
 let food = [];
-let powerups = [];
 
-// Generate food
-function spawnFood(count = FOOD_COUNT) {
-  const foods = ["🍎", "🍌", "🍇", "🍒", "🍕", "🍔", "🌮", "🍩", "🍪", "🥝", "🍓", "🍉"];
-  for (let i = 0; i < count; i++) {
-    food.push({
-      id: Math.random(),
-      x: Math.random() * MAP_SIZE,
-      y: Math.random() * MAP_SIZE,
-      emoji: foods[Math.floor(Math.random() * foods.length)]
-    });
-  }
-}
-
-// Power-up types
-const powerupTypes = [
-  { emoji: "⚡", color: "#ffff00", name: "Speed", duration: 8000 },
-  { emoji: "🛡️", color: "#00ffff", name: "Shield", duration: 10000 },
-  { emoji: "💣", color: "#ff0066", name: "Bomb", duration: 100 },
-  { emoji: "❄️", color: "#00ffff", name: "Freeze", duration: 5000 },
-  { emoji: "🍄", color: "#ff8800", name: "Grow", duration: 100 },
-  { emoji: "🧲", color: "#ff00ff", name: "Magnet", duration: 8000 }
-];
-
-function spawnPowerup() {
-  const type = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
-  powerups.push({
-    id: Math.random(),
-    x: Math.random() * MAP_SIZE,
-    y: Math.random() * MAP_SIZE,
-    ...type
+for (let i = 0; i < 1200; i++) {
+  food.push({
+    x: Math.random() * MAP,
+    y: Math.random() * MAP,
+    emoji: ["🍎","🍌","🍇","🍒","🍕","🍔","🍩","🍪"][Math.floor(Math.random()*8)]
   });
 }
 
-spawnFood();
-for (let i = 0; i < POWERUP_COUNT; i++) spawnPowerup();
-
-io.on("connection", (socket) => {
-  console.log("Player connected:", socket.id);
-
-  socket.on("join", (data) => {
+io.on("connection", socket => {
+  socket.on("join", data => {
     players[socket.id] = {
       id: socket.id,
       name: data.name || "Player",
-      skin: data.skin || "😎",
-      x: 1000 + Math.random() * 3000,
-      y: 1000 + Math.random() * 3000,
-      mass: 50,
-      blobs: [{ x: 0, y: 0, mass: 50 }],
-      color: `hsl(${Math.random() * 360}, 100%, 70%)`,
-      powerup: null,
-      powerupEnd: 0
+      skin: data.skin || "😈",
+      x: 2000 + Math.random() * 1000,
+      y: 2000 + Math.random() * 1000,
+      size: 30,
+      blobs: [{x:0, y:0, size:30}]
     };
-    socket.emit("init", { id: socket.id, players, food, powerups, mapSize: MAP_SIZE });
   });
 
-  socket.on("move", (mouse) => {
+  socket.on("move", dir => {
     if (!players[socket.id]) return;
     const p = players[socket.id];
-    const speed = 3.5 / Math.pow(p.mass, 0.2);
-    p.blobs.forEach(blob => {
-      const dx = mouse.x - blob.x;
-      const dy = mouse.y - blob.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      blob.x += (dx / dist) * speed;
-      blob.y += (dy / dist) * speed;
+    const speed = 5 + (1000 / p.size); // bigger = slower
+    p.blobs.forEach(b => {
+      b.x += dir.x * speed;
+      b.y += dir.y * speed;
     });
+
+    // eat food
+    food = food.filter(f => {
+      for (let b of p.blobs) {
+        if (Math.hypot(f.x - (p.x + b.x), f.y - (p.y + b.y)) < p.size / 2) {
+          p.size += 3;
+          b.size += 3;
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // eat players
+    for (let id in players) {
+      if (id === socket.id) continue;
+      const other = players[id];
+      for (let b1 of p.blobs) {
+        for (let b2 of other.blobs) {
+          if (Math.hypot((p.x + b1.x) - (other.x + b2.x), (p.y + b1.y) - (other.y + b2.y)) < p.size / 2 &&
+              p.size > other.size * 1.1) {
+            p.size += other.size / 5;
+            b1.size += other.size / 5;
+            delete players[id];
+            io.emit("killfeed", `${p.name} ate ${other.name}`);
+            return;
+          }
+        }
+      }
+    }
+
+    while (food.length < 1200) {
+      food.push({x: Math.random()*MAP, y: Math.random()*MAP, emoji: "🍎"});
+    }
+
+    io.emit("state", {players, food});
   });
 
   socket.on("split", () => {
@@ -87,68 +80,23 @@ io.on("connection", (socket) => {
     const p = players[socket.id];
     const newBlobs = [];
     p.blobs.forEach(b => {
-      if (b.mass > 20) {
-        b.mass /= 2;
-        newBlobs.push({ x: b.x + 20, y: b.y + 20, mass: b.mass });
+      if (b.size > 35) {
+        b.size /= 2;
+        newBlobs.push({x: b.x + 30, y: b.y + 30, size: b.size});
       }
     });
     p.blobs.push(...newBlobs);
   });
 
-  socket.on("chat", (msg) => {
-    if (msg.trim()) {
-      io.emit("chat", { name: players[socket.id]?.name || "??", msg: msg.trim() });
-    }
+  socket.on("chat", msg => {
+    if (msg.trim()) io.emit("chat", `${players[socket.id]?.name}: ${msg}`);
   });
 
-  socket.on("disconnect", () => {
-    delete players[socket.id];
-    io.emit("playerLeft", socket.id);
-  });
+  socket.on("disconnect", () => delete players[socket.id]);
 });
 
-// Game loop
-setInterval(() => {
-  if (Object.keys(players).length === 0) return;
+setInterval(() => io.emit("state", {players, food}), 1000/60);
 
-  // Eat food & powerups
-  for (let id in players) {
-    const p = players[id];
-    p.mass = p.blobs.reduce((a, b) => a + b.mass, 0);
-
-    p.blobs = p.blobs.filter(b => b.mass > 10);
-
-    food = food.filter(f => {
-      for (let blob of p.blobs) {
-        if (Math.hypot(f.x - (p.x + blob.x), f.y - (p.y + blob.y)) < p.mass / 3) {
-          blob.mass += 2;
-          return false;
-        }
-      }
-      return true;
-    });
-
-    powerups = powerups.filter(pu => {
-      for (let blob of p.blobs) {
-        if (Math.hypot(pu.x - (p.x + blob.x), pu.y - (p.y + blob.y)) < p.mass / 2) {
-          p.powerup = pu.name;
-          p.powerupEnd = Date.now() + pu.duration;
-          io.emit("killfeed", `${p.name} got ${pu.name}!`);
-          return false;
-        }
-      }
-      return true;
-    });
-  }
-
-  // Respawn food & powerups
-  while (food.length < FOOD_COUNT) spawnFood(10);
-  while (powerups.length < POWERUP_COUNT) spawnPowerup();
-
-  io.emit("gameState", { players, food, powerups });
-}, 1000 / 60);
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`🚀 EMOJI.IO LIVE ON PORT ${PORT} — BEST .IO GAME EVER MADE 🔥`);
+server.listen(process.env.PORT || 3000, () => {
+  console.log("CLEAN .IO GAME LIVE — NO LAG, NO NEON, NO BULLSHIT");
 });
