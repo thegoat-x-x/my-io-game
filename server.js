@@ -1,129 +1,93 @@
 const express = require("express");
 const app = express();
-const http = require("http").createServer(app);
-const io = require("socket.io")(http, { cors: { origin: "*" } });
+const server = require("http").createServer(app);
+const io = require("socket.io")(server);
 
-const PORT = process.env.PORT || 3000;
+app.use(express.static("public"));
 
-app.use(express.static(__dirname + "/public"));
-
-// World settings
-const WORLD_W = 2400;
-const WORLD_H = 1600;
-const FOOD_COUNT = 60;
-
-// game state
-let players = {}; // { socketId: { x,y, size, emoji, vx, vy, name } }
+const MAP_SIZE = 4000;
+let players = {};
 let food = [];
+const foodTypes = ["🍎","🍌","🍇","🍒","🍕","🍔","🌮","🍩","🍪"];
+for(let i=0; i<800; i++) food.push({x:Math.random()*MAP_SIZE, y:Math.random()*MAP_SIZE, emoji:foodTypes[Math.floor(Math.random()*foodTypes.length)]});
 
-// food types
-const foodTypes = [
-  { emoji: "🍎", growth: 2 },
-  { emoji: "🍌", growth: 3 },
-  { emoji: "🍇", growth: 4 },
-  { emoji: "🍒", growth: 5 }
-];
-
-// spawn initial food
-function spawnFood() {
-  food = [];
-  for (let i = 0; i < FOOD_COUNT; i++) {
-    const f = foodTypes[Math.floor(Math.random() * foodTypes.length)];
-    food.push({
-      id: Math.random().toString(36).slice(2, 9),
-      x: Math.random() * (WORLD_W - 40) + 20,
-      y: Math.random() * (WORLD_H - 40) + 20,
-      emoji: f.emoji,
-      growth: f.growth
-    });
-  }
+const powerupTypes = [{emoji:"⚡", color:"#ffff00", effect:"speed"}, {emoji:"🛡️", color:"#00ffff", effect:"shield"}, {emoji:"💣", color:"#ff0066", effect:"bomb"}, {emoji:"🧲", color:"#ff00ff", effect:"magnet"}, {emoji:"🍄", color:"#ff8800", effect:"grow"}];
+let powerups = [];
+for(let i=0; i<8; i++) {
+    const type = powerupTypes[Math.floor(Math.random()*powerupTypes.length)];
+    powerups.push({x:Math.random()*MAP_SIZE, y:Math.random()*MAP_SIZE, ...type});
 }
-spawnFood();
 
 io.on("connection", socket => {
-  console.log("connect:", socket.id);
+    console.log("Player connected:", socket.id);
 
-  // initialize player server-side
-  players[socket.id] = {
-    x: Math.random() * (WORLD_W - 60) + 30,
-    y: Math.random() * (WORLD_H - 60) + 30,
-    size: 36,
-    emoji: "😎",
-    vx: 0,
-    vy: 0,
-    name: "Player"
-  };
+    socket.on("ready", data => {
+        players[socket.id] = {x:Math.random()*(MAP_SIZE-60)+30, y:Math.random()*(MAP_SIZE-60)+30, size:30, emoji:data.emoji, name:data.name || "Player"};
+        socket.emit("init", {id:socket.id, players, food, powerups, world:{w:MAP_SIZE, h:MAP_SIZE}});
+        io.emit("players", players);
+        io.emit("food", food);
+        io.emit("powerups", powerups);
+    });
 
-  // send init packet
-  socket.emit("init", {
-    id: socket.id,
-    world: { w: WORLD_W, h: WORLD_H },
-    players,
-    food
-  });
+    socket.on("move", data => {
+        if(players[socket.id]) {
+            players[socket.id].x = data.x;
+            players[socket.id].y = data.y;
 
-  // broadcast new players to everyone
-  io.emit("players", players);
+            // eat food
+            food = food.filter(f => {
+                const dist = Math.hypot(f.x - players[socket.id].x, f.y - players[socket.id].y);
+                if(dist < players[socket.id].size / 2 + 15) {
+                    players[socket.id].size += 4;
+                    return false;
+                }
+                return true;
+            });
 
-  socket.on("ready", data => {
-    if (players[socket.id]) {
-      if (data && data.emoji) players[socket.id].emoji = data.emoji;
-      if (data && data.name) players[socket.id].name = data.name;
-      io.emit("players", players);
-    }
-  });
+            // eat powerups
+            powerups = powerups.filter(pu => {
+                const dist = Math.hypot(pu.x - players[socket.id].x, pu.y - players[socket.id].y);
+                if(dist < players[socket.id].size / 2 + 30) return false;
+                return true;
+            });
 
-  socket.on("move", d => {
-    // server trusts position but clamps/sanitizes
-    if (!players[socket.id]) return;
-    const p = players[socket.id];
+            // respawn
+            while(food.length < 800) food.push({x:Math.random()*MAP_SIZE, y:Math.random()*MAP_SIZE, emoji:foodTypes[Math.floor(Math.random()*foodTypes.length)]});
+            while(powerups.length < 8) {
+                const type = powerupTypes[Math.floor(Math.random()*powerupTypes.length)];
+                powerups.push({x:Math.random()*MAP_SIZE, y:Math.random()*MAP_SIZE, ...type});
+            }
 
-    // sanitize numeric input
-    const x = Number(d.x) || p.x;
-    const y = Number(d.y) || p.y;
+            // eat players
+            for(let id in players) {
+                if(id === socket.id) continue;
+                const other = players[id];
+                const dist = Math.hypot(other.x - players[socket.id].x, other.y - players[socket.id].y);
+                if(dist < (players[socket.id].size + other.size)/2 && players[socket.id].size > other.size * 1.2) {
+                    players[socket.id].size += other.size / 4;
+                    delete players[id];
+                    io.emit("playerEaten", {victimId: id, killerId: socket.id});
+                }
+            }
 
-    // clamp inside world
-    p.x = Math.max(0, Math.min(WORLD_W - p.size, x));
-    p.y = Math.max(0, Math.min(WORLD_H - p.size, y));
+            io.emit("players", players);
+            io.emit("food", food);
+            io.emit("powerups", powerups);
+        }
+    });
 
-    // check collisions with food (circle-ish)
-    for (let i = 0; i < food.length; i++) {
-      const f = food[i];
-      const dx = (f.x) - p.x;
-      const dy = (f.y) - p.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < p.size * 0.6) { // approximate collide
-        p.size += f.growth;
-        // respawn that food
-        const nf = foodTypes[Math.floor(Math.random()*foodTypes.length)];
-        food[i] = {
-          id: Math.random().toString(36).slice(2,9),
-          x: Math.random() * (WORLD_W - 40) + 20,
-          y: Math.random() * (WORLD_H - 40) + 20,
-          emoji: nf.emoji,
-          growth: nf.growth
-        };
-      }
-    }
+    socket.on("split", () => {
+        if(players[socket.id] && players[socket.id].size > 40) {
+            players[socket.id].size /= 2;
+        }
+    });
 
-    // broadcast updates
-    io.emit("players", players);
-    io.emit("food", food);
-  });
+    socket.on("chat", msg => io.emit("chat", `${players[socket.id]?.name || "Anon"}: ${msg}`));
 
-  socket.on("disconnect", () => {
-    console.log("disconnect:", socket.id);
-    delete players[socket.id];
-    io.emit("players", players);
-  });
+    socket.on("disconnect", () => {
+        delete players[socket.id];
+        io.emit("players", players);
+    });
 });
 
-// Small periodic cleanup / broadcast to keep clients in sync (optional)
-setInterval(() => {
-  io.emit("players", players);
-  io.emit("food", food);
-}, 1000);
-
-http.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-});
+server.listen(process.env.PORT || 3000, () => console.log("EMOJI.IO LIVE - NO FREEZE 🔥"));
