@@ -1,59 +1,37 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>EMOJI.IO — FINAL + CHAT</title>
-    <style>
-        body { margin:0; background:#ab3030; overflow:hidden; font-family:Arial; color:#0ff; }
-        #menu, #shop { position:fixed; top:0; left:0; width:100%; height:100%; background:#000000; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:999; }
-        #shop { display:none; }
-        h1 { font-size:100px; text-shadow:0 0 90px rgb(255, 255, 255); margin:20px; }
-        input { padding:12px; width:280px; font-size:22px; margin:10px; text-align:center; background:#111; border:2px solid #0ff; color:#0ff; border-radius:8px; }
-        button { padding:12px 50px; margin:10px; font-size:28px; background:#0ff; color:#000; border:none; border-radius:8px; cursor:pointer; }
-        button:hover { background:#0f0; }
-        #skinGrid { display:grid; grid-template-columns:repeat(8,1fr); gap:12px; margin:20px; }
-        .skin { font-size:48px; padding:8px; background:#111; border:2px solid #0ff; border-radius:8px; cursor:pointer; }
-        .skin:hover { background:rgb(0, 16, 16); color:#000; }
-        .skin.selected { background:rgb(45, 34, 34); border:3px solid #fff; transform:scale(1.3); }
-
-        canvas { position:absolute; top:0; left:0; z-index:1; }
-        #lb { position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.8); padding:12px; border-radius:8px; z-index:10; font-size:16px; }
-        #chatBox { position:absolute; bottom:10px; left:10px; width:400px; height:150px; background:rgba(0,0,0,0.8); border:2px solid #0ff; border-radius:8px; z-index:10; overflow-y:auto; padding:10px; font-size:18px; }
-        #chatInput { position:absolute; bottom:10px; left:420px; width:300px; padding:10px; background:#111; border:2px solid #0ff; color:#0ff; font-size:18px; }
-        #death { position:fixed; top:0; left:0; width:100%; height:100%; background:#000; display:none; flex-direction:column; align-items:center; justify-content:center; z-index:999; color:#0ff; }
-        .powerup { font-size:50px; animation:spin 3s linear infinite; text-shadow:0 0 20px; }
-        @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
-    </style>
+  <meta charset="utf-8" />
+  <title>My .io Game — Pro Build</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Loading -->
+  <div id="overlay" class="overlay">
+    <div id="loading" class="box">
+      <h1>Emoji .io</h1>
+      <div id="loadingText">Loading...</div>
+      <div class="row">
+        <input id="nameInput" placeholder="Your name (optional)" />
+      </div>
+      <div class="row">
+        <button onclick="chooseCharacter('😎')">😎 Cool</button>
+        <button onclick="chooseCharacter('😃')">😃 Happy</button>
+        <button onclick="chooseCharacter('😈')">😈 Devil</button>
+      </div>
+      <small class="muted">Sprites supported: place PNGs in /public/assets</small>
+    </div>
+  </div>
 
-<div id="menu">
-    <h1>EMOJI.IO</h1>
-    <h2> BETA</h2>
-    <input type="text" id="nameInput" placeholder="Your Name" maxlength="12">
-    <button onclick="showShop()">SKINS</button>
-    <button onclick="play()">PLAY</button>
-</div>
+  <canvas id="gameCanvas" width="1200" height="800"></canvas>
 
-<div id="shop">
-    <h1>SKIN SHOP</h1>
-    <div id="skinGrid"></div>
-    <button onclick="back()">BACK</button>
-</div>
+  <div id="hud">
+    <div id="leaderboard" class="panel"></div>
+    <div id="info" class="panel">WASD/Arrows to move • Eat food to grow</div>
+  </div>
 
-<canvas id="gameCanvas" width="1200" height="800"></canvas>
-<div id="lb">Loading...</div>
-
-<div id="chatBox"></div>
-<input id="chatInput" type="text" placeholder="Press T to chat..." maxlength="60">
-
-<div id="death">
-    <h1>U DIED</h1>
-    <p id="killer" style="font-size:40px"></p>
-    <button onclick="respawn()">PLAY AGAIN</button>
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script src="script.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
