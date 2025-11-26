@@ -2,22 +2,29 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>EMOJI.IO — NO LAG EDITION</title>
+  <title>NINJA.IO</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="menu">
-    <h1>EMOJI.IO</h1>
-    <input type="text" id="name" placeholder="Name" maxlength="12">
+    <h1>NINJA.IO</h1>
+    <input type="text" id="name" placeholder="Ninja Name" maxlength="12">
     <div id="skins"></div>
-    <button onclick="play()">PLAY</button>
-    <p>WASD/Arrows only • Space split • T chat</p>
+    <button onclick="play()">ENTER BATTLE</button>
   </div>
 
   <canvas id="c"></canvas>
   <div id="lb"></div>
   <div id="chat"></div>
   <input id="msg" placeholder="T to chat">
+
+  <!-- Mobile controls -->
+  <div id="mobile">
+    <button onclick="keys.left=true" ontouchstart="keys.left=true" ontouchend="keys.left=false">◄</button>
+    <button onclick="keys.right=true" ontouchstart="keys.right=true" ontouchend="keys.right=false">►</button>
+    <button onclick="keys.jump=true">↑</button>
+    <button onclick="keys.attack=true">⚔️</button>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="script.js"></script>
