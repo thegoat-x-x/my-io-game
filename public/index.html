@@ -1,37 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0 maximum-scale=1.0" />
-  <title>EMOJI.IO — The Ultimate .io Game</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8">
+  <title>EMOJI.IO — CLEAN & FAST</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="menu">
     <h1>EMOJI.IO</h1>
-    <input type="text" id="nameInput" placeholder="Enter your name" maxlength="14" />
+    <input type="text" id="name" placeholder="Name" maxlength="12">
     <div id="skins"></div>
-    <button onclick="startGame()">PLAY NOW</button>
-    <p>Use mouse or WASD • Space to split • T to chat</p>
+    <button onclick="play()">PLAY</button>
+    <p>WASD or Arrows • Space to split • T to chat</p>
   </div>
 
-  <canvas id="canvas"></canvas>
-
-  <div id="hud">
-    <div id="leaderboard"></div>
-    <div id="killfeed"></div>
-  </div>
-
-  <div id="chat">
-    <div id="messages"></div>
-    <input type="text" id="chatInput" placeholder="Press T to chat..." maxlength="80" />
-  </div>
-
-  <div id="death">
-    <h1>You Died!</h1>
-    <p id="deathMsg"></p>
-    <button onclick="respawn()">Play Again</button>
-  </div>
+  <canvas id="c"></canvas>
+  <div id="lb"></div>
+  <div id="chat"></div>
+  <input id="msg" placeholder="Press T to chat" maxlength="60">
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="script.js"></script>
